@@ -25,6 +25,7 @@ import com.google.zxing.BinaryBitmap;
 import com.google.zxing.DecodeHintType;
 import com.google.zxing.MultiFormatReader;
 import com.google.zxing.PlanarYUVLuminanceSource;
+import com.google.zxing.LuminanceSource;
 import com.google.zxing.Result;
 import com.google.zxing.common.HybridBinarizer;
 
@@ -275,6 +276,14 @@ class RCTCameraViewFinder extends TextureView implements TextureView.SurfaceText
             this.imageData = imageData;
         }
 
+        private void onScanResult (Result result) {
+            ReactContext reactContext = RCTCameraModule.getReactContextSingleton();
+            WritableMap event = Arguments.createMap();
+            event.putString("data", result.getText());
+            event.putString("type", result.getBarcodeFormat().toString());
+            reactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit("CameraBarCodeReadAndroid", event);
+        }
+
         @Override
         protected Void doInBackground(Void... ignored) {
             if (isCancelled()) {
@@ -299,19 +308,30 @@ class RCTCameraViewFinder extends TextureView implements TextureView.SurfaceText
               imageData = rotated;
             }
 
-            try {
-                PlanarYUVLuminanceSource source = new PlanarYUVLuminanceSource(imageData, width, height, 0, 0, width, height, false);
-                BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(source));
-                Result result = _multiFormatReader.decodeWithState(bitmap);
+            Result result = null;
+            BinaryBitmap bitmap = null;
 
-                ReactContext reactContext = RCTCameraModule.getReactContextSingleton();
-                WritableMap event = Arguments.createMap();
-                event.putString("data", result.getText());
-                event.putString("type", result.getBarcodeFormat().toString());
-                reactContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class).emit("CameraBarCodeReadAndroid", event);
+            PlanarYUVLuminanceSource source = new PlanarYUVLuminanceSource(imageData, width, height, 0, 0, width, height, false);
+
+            try {
+                bitmap = new BinaryBitmap(new HybridBinarizer(source));
+                result = _multiFormatReader.decodeWithState(bitmap);
+
+                onScanResult(result);
 
             } catch (Throwable t) {
-                // meh
+
+                try {
+                    LuminanceSource inverted = source.invert();
+                    bitmap = new BinaryBitmap(new HybridBinarizer(inverted));
+                    result = _multiFormatReader.decodeWithState(bitmap);
+
+                    onScanResult(result);
+
+                } catch (Throwable e) {
+                    // meh
+                }
+
             } finally {
                 _multiFormatReader.reset();
                 RCTCameraViewFinder.barcodeScannerTaskLock = false;
